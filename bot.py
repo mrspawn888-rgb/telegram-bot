@@ -1,7 +1,8 @@
 import telebot
 
-# 🔹 Вставь сюда свой токен, который дал BotFather
-TOKEN = "7664553338:AAEQ3TpJlPhzsARhVOxw4OtJaiAT8NPJjWI"
+import os
+TOKEN = os.getenv("BOT_TOKEN")
+
 
 # Создаём объект бота
 bot = telebot.TeleBot(TOKEN)
