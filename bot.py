@@ -1,72 +1,72 @@
 import telebot
 from telebot import types
+from flask import Flask, request
 import os
-from flask import Flask
-import threading
 
 # === Настройки ===
-TOKEN = os.getenv("BOT_TOKEN")
-GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID")  # ID группы для заказов
+TOKEN = os.getenv("BOT_TOKEN") or "ВСТАВЬ_СВОЙ_ТОКЕН_СЮДА"
+GROUP_CHAT_ID = os.getenv("GROUP_CHAT_ID") or "-1003090948208"  # Замени на свой ID группы
+
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
 # Хранилище данных пользователей
 user_data = {}
 
-# === Команда старт ===
+# === Приветствие ===
 @bot.message_handler(commands=['start'])
-def start(message):
-    show_start_menu(message.chat.id)
+def cmd_start(message):
+    chat_id = message.chat.id
+    welcome_text = (
+        "🍞 <b>Добро пожаловать в Булочную №1!</b>\n\n"
+        "🥐 Свежая выпечка, сомса, булочки, сеты, компоты и напитки — всё с любовью!\n"
+        "🕖 Время работы: <b>07:00–20:00</b> без выходных.\n"
+        "☎️ Call-центр: <a href='tel:+998950130660'>+998 95 013 0660</a>\n\n"
+        "📦 Нажмите на кнопку <b>«Старт»</b>, чтобы оформить заказ прямо сейчас!"
+    )
 
-def show_start_menu(chat_id):
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    start_button = types.KeyboardButton("🚀 Старт")
-    keyboard.add(start_button)
-    bot.send_message(chat_id, "Привет! Нажми кнопку 'Старт', чтобы начать оформление заказа.", reply_markup=keyboard)
+    keyboard.add(types.KeyboardButton("🚀 Старт"))
+    bot.send_message(chat_id, welcome_text, parse_mode="HTML", reply_markup=keyboard)
 
-# === Начало заказа ===
+# === Кнопка старт ===
 @bot.message_handler(func=lambda message: message.text == "🚀 Старт")
-def handle_start_button(message):
+def handle_start(message):
     chat_id = message.chat.id
     bot.send_message(chat_id, "Введите, пожалуйста, ваше имя и фамилию:")
-
-    # создаём пустую структуру данных
-    user_data[chat_id] = {
-        "name": None,
-        "phone": None,
-        "location": None,
-        "cart": []
-    }
+    user_data[chat_id] = {}
     bot.register_next_step_handler(message, get_name)
 
-# === Получаем имя ===
+# === Получение имени ===
 def get_name(message):
     chat_id = message.chat.id
     user_data[chat_id]['name'] = message.text
 
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
     button = types.KeyboardButton("📞 Отправить контакт", request_contact=True)
     keyboard.add(button)
+    keyboard.add("⬅️ Назад")
 
     bot.send_message(chat_id, "Теперь отправьте ваш контактный телефон:", reply_markup=keyboard)
     bot.register_next_step_handler(message, get_contact)
 
-# === Получаем контакт ===
+# === Получение контакта ===
 @bot.message_handler(content_types=['contact'])
 def get_contact(message):
     chat_id = message.chat.id
     if message.contact:
         user_data[chat_id]['phone'] = message.contact.phone_number
 
-        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
         button = types.KeyboardButton("📍 Отправить локацию", request_location=True)
         keyboard.add(button)
+        keyboard.add("⬅️ Назад")
 
         bot.send_message(chat_id, "Теперь отправьте вашу локацию для доставки:", reply_markup=keyboard)
-        bot.register_next_step_handler(message, get_location)
     else:
         bot.send_message(chat_id, "Пожалуйста, используйте кнопку для отправки контакта.")
 
-# === Получаем локацию ===
+# === Получение локации ===
 @bot.message_handler(content_types=['location'])
 def get_location(message):
     chat_id = message.chat.id
@@ -75,139 +75,70 @@ def get_location(message):
             'latitude': message.location.latitude,
             'longitude': message.location.longitude
         }
-        main_menu(chat_id)
+        show_menu(chat_id)
     else:
         bot.send_message(chat_id, "Пожалуйста, используйте кнопку для отправки локации.")
 
 # === Главное меню ===
-def main_menu(chat_id):
+def show_menu(chat_id):
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    buttons = ["🥟 Сомса", "🥯 Сдобные булочки", "🍩 Сладкие булочки", "⬅️ Назад"]
+    for b in buttons:
+        keyboard.add(b)
+    bot.send_message(chat_id, "Выберите категорию:", reply_markup=keyboard)
 
-    buttons = [
-        "🥟 Сомса",
-        "🥯 Сдобные булочки",
-        "🍩 Сладкие булочки",
-        "🍪 Из песочного теста сладкое",
-        "🍱 Сеты",
-        "🥗 Салаты",
-        "🍲 Супы",
-        "🥤 Компот",
-        "🥛 Напитки"
-    ]
+# === Обработка кнопки Назад ===
+@bot.message_handler(func=lambda message: message.text == "⬅️ Назад")
+def go_back(message):
+    cmd_start(message)
 
-    for i in range(0, len(buttons), 2):
-        if i + 1 < len(buttons):
-            keyboard.add(buttons[i], buttons[i + 1])
-        else:
-            keyboard.add(buttons[i])
-
-    keyboard.add("🛒 Корзина", "✅ Завершить заказ", "🔙 Назад")
-    bot.send_message(chat_id, "Отлично! Выберите категорию:", reply_markup=keyboard)
-
-# === Категория "Сомса" ===
+# === Сомса ===
 @bot.message_handler(func=lambda message: message.text == "🥟 Сомса")
-def show_somsa_menu(message):
+def somsa_menu(message):
     chat_id = message.chat.id
     keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-
-    keyboard.add("🥟 Сомса с мясом — 6000")
-    keyboard.add("🥔 Сомса с картошкой — 5000")
-    keyboard.add("🔙 Назад")
-
+    keyboard.add("🥩 Сомса с мясом — 6000", "🥔 Сомса с картошкой — 5000")
+    keyboard.add("⬅️ Назад")
     bot.send_message(chat_id, "Выберите вид сомсы:", reply_markup=keyboard)
 
-# === Добавление сомсы в корзину ===
-@bot.message_handler(func=lambda message: message.text in ["🥟 Сомса с мясом — 6000", "🥔 Сомса с картошкой — 5000"])
-def add_somsa_to_cart(message):
-    chat_id = message.chat.id
-    item = message.text
-
-    user_data[chat_id]["cart"].append(item)
-    bot.send_message(chat_id, f"✅ {item} добавлено в корзину!")
-
-    # Можно будет прикрепить фото:
-    # bot.send_photo(chat_id, open("somsa_meat.jpg", "rb"), caption="Сомса с мясом — вкусная и сытная!")
-
-    main_menu(chat_id)
-
-# === Корзина ===
-@bot.message_handler(func=lambda message: message.text == "🛒 Корзина")
-def show_cart(message):
-    chat_id = message.chat.id
-    cart = user_data.get(chat_id, {}).get("cart", [])
-
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-
-    if not cart:
-        bot.send_message(chat_id, "Ваша корзина пока пуста. 🛍️")
-    else:
-        items = "\n".join([f"• {item}" for item in cart])
-        bot.send_message(chat_id, f"🛒 Ваша корзина:\n\n{items}")
-
-        keyboard.add("🗑 Очистить корзину")
-
-    keyboard.add("🔙 Назад")
-    bot.send_message(chat_id, "Выберите действие:", reply_markup=keyboard)
-
-# === Очистка корзины ===
-@bot.message_handler(func=lambda message: message.text == "🗑 Очистить корзину")
-def clear_cart(message):
-    chat_id = message.chat.id
-    if chat_id in user_data:
-        user_data[chat_id]["cart"] = []
-        bot.send_message(chat_id, "🗑 Корзина успешно очищена!")
-    else:
-        bot.send_message(chat_id, "Корзина и так пуста.")
-    main_menu(chat_id)
-
 # === Завершение заказа ===
-@bot.message_handler(func=lambda message: message.text == "✅ Завершить заказ")
+@bot.message_handler(func=lambda message: "Сомса" in message.text)
 def finish_order(message):
     chat_id = message.chat.id
-    if chat_id not in user_data or 'name' not in user_data[chat_id]:
-        bot.send_message(chat_id, "Ошибка: информация о пользователе не найдена.")
-        return
+    user = user_data.get(chat_id, {})
+    name = user.get('name', 'Не указано')
+    phone = user.get('phone', 'Не указано')
+    loc = user.get('location', {})
+    latitude = loc.get('latitude', 0)
+    longitude = loc.get('longitude', 0)
 
-    name = user_data[chat_id].get('name', 'Не указано')
-    phone = user_data[chat_id].get('phone', 'Не указано')
-    location = user_data[chat_id].get('location', {})
-    cart = user_data[chat_id].get('cart', [])
-
-    cart_text = "\n".join([f"• {item}" for item in cart]) if cart else "Корзина пуста"
+    order = message.text
 
     group_message = (
-        f"🆕 *Новый заказ!*\n\n"
+        f"🆕 <b>Новый заказ!</b>\n\n"
         f"👤 Имя: {name}\n"
         f"📞 Телефон: {phone}\n"
-        f"📍 Локация: https://maps.google.com/?q={location.get('latitude')},{location.get('longitude')}\n\n"
-        f"🛒 Заказ:\n{cart_text}"
+        f"📦 Заказ: {order}\n"
+        f"📍 Локация: https://maps.google.com/?q={latitude},{longitude}"
     )
 
-    bot.send_message(GROUP_CHAT_ID, group_message, parse_mode="Markdown")
-    bot.send_message(chat_id, "Спасибо! Ваш заказ был отправлен на обработку. ✅")
+    bot.send_message(GROUP_CHAT_ID, group_message, parse_mode="HTML")
+    bot.send_message(chat_id, "✅ Спасибо! Ваш заказ был отправлен. Мы скоро свяжемся с вами!")
 
-# === Кнопка Назад ===
-@bot.message_handler(func=lambda message: message.text == "🔙 Назад")
-def go_back(message):
-    main_menu(message.chat.id)
+# === Flask Webhook ===
+@app.route(f"/{TOKEN}", methods=['POST'])
+def webhook():
+    update = telebot.types.Update.de_json(request.stream.read().decode("utf-8"))
+    bot.process_new_updates([update])
+    return "OK", 200
 
-# === Запуск бота ===
-def run_bot():
-    print("Бот запущен и работает...")
-    bot.infinity_polling()
-
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Bot is running!"
-
-def run_flask():
-    app.run(host='0.0.0.0', port=10000)
+@app.route("/")
+def index():
+    return "Bot is running!", 200
 
 if __name__ == "__main__":
-    threading.Thread(target=run_bot).start()
-    threading.Thread(target=run_flask).start()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 10000)))
+
 
 
 
